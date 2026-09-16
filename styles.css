@@ -351,6 +351,14 @@ input, select { font: inherit; }
   border: 1.5px solid #d4e0ee;
 }
 .sel-card-on .sel-pick { background: #00205b; color: #fff; border-color: #00205b; }
+.sel-q {
+  display: block; width: 100%; margin-top: 5px;
+  font: inherit; font-size: 12.5px; color: var(--text);
+  background: #fff; border: 1px solid #c9d4e4; border-radius: 6px;
+  padding: 3px 6px; cursor: pointer;
+}
+.sel-q:focus { outline: none; border-color: #00205b; }
+.sel-q-bad { border-color: var(--danger); background: #fdeef1; }
 .sel-open {
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid #d9e1ea;
   background: #fff; color: #36547d; cursor: pointer; font-size: 14px;

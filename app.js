@@ -113,16 +113,6 @@
   $("#sel-search").addEventListener("input", (e) => { state.selSearch = e.target.value.toLowerCase().trim(); renderSeleccion(); });
   $("#sel-clear").addEventListener("click", () => { state.sel = []; renderSeleccion(); });
   $("#sel-send").addEventListener("click", sendSeleccion);
-  $("#sel-copy").addEventListener("click", () => {
-    const txt = seleccionText();
-    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).catch(() => {
-      const ta = document.createElement("textarea");
-      ta.value = txt; document.body.appendChild(ta); ta.select();
-      document.execCommand("copy"); ta.remove();
-    });
-    const b = $("#sel-copy"); b.textContent = "¡Copiado!";
-    setTimeout(() => (b.textContent = "Copiar selección al portapapeles"), 2000);
-  });
 
   /* ---------- favorites ---------- */
   function saveFavs() { localStorage.setItem(FAV_KEY, JSON.stringify([...state.favs])); updateFavBadge(); }
@@ -241,11 +231,12 @@
       </article>`;
   }
 
-  /* ---------- selección de apartamentos (máx. 5, por orden) ---------- */
+  /* ---------- selección de apartamentos (máx. 5, por orden, con quincena) ---------- */
+  const QUINCENAS = ["16-30 junio", "1-15 julio", "16-30 julio", "1-15 agosto", "16-30 agosto", "1-15 septiembre"];
   function seleccionText() {
-    const lines = state.sel.map((id, i) => {
-      const l = DATA.find(x => x.id === id);
-      return (i + 1) + "º. " + (l.subtitle || l.title) + " — " + l.citySimple;
+    const lines = state.sel.map((s, i) => {
+      const l = DATA.find(x => x.id === s.id);
+      return (i + 1) + "º. " + (l.subtitle || l.title) + " — " + l.citySimple + " · Quincena: " + s.q;
     });
     return "SELECCIÓN DE APARTAMENTOS (España 2027)\n\n" + lines.join("\n") +
       "\n\nTotal: " + state.sel.length + " apartamento" + (state.sel.length === 1 ? "" : "s") + ".";
@@ -253,9 +244,11 @@
   function sendSeleccion() {
     if (!state.sel.length) return;
     $("#sel-sent").hidden = false;
+    const b = $("#sel-send");
+    b.textContent = "Enviado ✓";
+    b.disabled = true;
   }
   function renderSeleccion() {
-    $("#sel-sent").hidden = true;
     const arr = DATA.filter(l => {
       if (state.selSearch) {
         const hay = (l.title + " " + l.subtitle + " " + l.citySimple).toLowerCase();
@@ -278,22 +271,25 @@
     });
     const chosen = $("#sel-chosen");
     chosen.innerHTML = state.sel.length
-      ? state.sel.map((id, i) => {
-          const l = DATA.find(x => x.id === id);
+      ? state.sel.map((s, i) => {
+          const l = DATA.find(x => x.id === s.id);
           return `<li class="sel-item">
             <span class="sel-num">${i + 1}</span>
-            <span class="sel-item-name">${esc(l.subtitle || l.title)}<small>${esc(l.citySimple)}</small></span>
+            <span class="sel-item-name">${esc(l.subtitle || l.title)}<small>${esc(l.citySimple)}</small>
+              <select class="sel-q" data-idx="${i}" title="Quincena">
+                ${QUINCENAS.map(q => `<option value="${esc(q)}"${q === s.q ? " selected" : ""}>${esc(q)}</option>`).join("")}
+              </select>
+            </span>
             <span class="sel-item-btns">
-              <button class="sel-move" data-dir="-1" data-id="${esc(id)}" title="Subir" ${i === 0 ? "disabled" : ""}>↑</button>
-              <button class="sel-move" data-dir="1" data-id="${esc(id)}" title="Bajar" ${i === state.sel.length - 1 ? "disabled" : ""}>↓</button>
-              <button class="sel-move sel-del" data-id="${esc(id)}" title="Quitar">✕</button>
+              <button class="sel-move" data-dir="-1" data-idx="${i}" title="Subir" ${i === 0 ? "disabled" : ""}>↑</button>
+              <button class="sel-move" data-dir="1" data-idx="${i}" title="Bajar" ${i === state.sel.length - 1 ? "disabled" : ""}>↓</button>
+              <button class="sel-move sel-del" data-idx="${i}" title="Quitar">✕</button>
             </span>
           </li>`;
         }).join("")
       : `<li class="sel-empty">Todavía no has elegido ningún apartamento. Toca las tarjetas de la lista para añadirlos por orden de preferencia.</li>`;
     $$(".sel-move", chosen).forEach(b => b.addEventListener("click", () => {
-      const id = b.dataset.id;
-      const i = state.sel.indexOf(id);
+      const i = parseInt(b.dataset.idx, 10);
       if (b.classList.contains("sel-del")) { state.sel.splice(i, 1); }
       else {
         const j = i + parseInt(b.dataset.dir, 10);
@@ -301,25 +297,39 @@
       }
       renderSeleccion();
     }));
+    $$(".sel-q", chosen).forEach(sel => sel.addEventListener("change", () => {
+      const i = parseInt(sel.dataset.idx, 10);
+      const q = sel.value;
+      const dup = state.sel.some((s, k) => k !== i && s.id === state.sel[i].id && s.q === q);
+      if (dup) {
+        sel.value = state.sel[i].q;
+        sel.classList.add("sel-q-bad");
+        setTimeout(() => sel.classList.remove("sel-q-bad"), 700);
+      } else {
+        state.sel[i].q = q;
+      }
+    }));
     $("#sel-full").hidden = state.sel.length < 5;
-    $("#sel-send").disabled = state.sel.length === 0;
+    const sendBtn = $("#sel-send");
+    sendBtn.textContent = "Enviar";
+    sendBtn.disabled = state.sel.length === 0;
   }
   function toggleSel(id) {
-    const i = state.sel.indexOf(id);
-    if (i !== -1) state.sel.splice(i, 1);
-    else if (state.sel.length < 5) state.sel.push(id);
+    const used = state.sel.filter(s => s.id === id).map(s => s.q);
+    const free = QUINCENAS.find(q => !used.includes(q));
+    if (free && state.sel.length < 5) state.sel.push({ id, q: free });
     renderSeleccion();
   }
   function selCardHTML(l) {
-    const chosen = state.sel.indexOf(l.id);
+    const positions = state.sel.map((s, i) => (s.id === l.id ? i + 1 : 0)).filter(n => n);
     return `
-      <div class="sel-card ${chosen !== -1 ? "sel-card-on" : ""}" data-id="${esc(l.id)}">
+      <div class="sel-card ${positions.length ? "sel-card-on" : ""}" data-id="${esc(l.id)}">
         <img src="${esc(img(l.photos[0] ? l.photos[0].url : "", 240))}" alt="${esc(l.title)}" loading="lazy">
         <div class="sel-card-body">
           <div class="sel-card-title">${esc(l.subtitle || l.title)}</div>
           <div class="sel-card-city">${esc(l.citySimple)}</div>
         </div>
-        <span class="sel-pick">${chosen !== -1 ? chosen + 1 + "º" : "＋"}</span>
+        <span class="sel-pick">${positions.length ? positions.map(n => n + "º").join(" ") : "＋"}</span>
         <button class="sel-open" title="Ver detalle">↗</button>
       </div>`;
   }
@@ -399,25 +409,34 @@
 
   /* ---------- maps ---------- */
   let detailMap = null, globalMap = null;
-  const TILE = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  /* Mapa de calles de Esri: misma infraestructura que el satélite (que ya funciona),
+     sin marca de agua y sin API key */
+  const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+  const TILE_OPTS = {
+    maxZoom: 19,
+    attribution: "Calles &copy; Esri, OpenStreetMap contributors"
+  };
+  /* Satélite híbrido: imagen Esri + calles + nombres de ciudades encima */
   const SAT_TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
   const SAT_OPTS = {
     maxZoom: 19,
     attribution: "Imágenes &copy; Esri, Maxar, Earthstar Geographics"
   };
+  const SAT_STREETS = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}";
+  const SAT_PLACES = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
   function addBaseLayers(map) {
+    const sat = L.layerGroup([
+      L.tileLayer(SAT_TILE, SAT_OPTS),
+      L.tileLayer(SAT_STREETS, { maxZoom: 19, maxNativeZoom: 19 }),
+      L.tileLayer(SAT_PLACES, { maxZoom: 19, maxNativeZoom: 19 })
+    ]);
     const base = {
       "Mapa": L.tileLayer(TILE, TILE_OPTS),
-      "Satélite": L.tileLayer(SAT_TILE, SAT_OPTS)
+      "Satélite": sat
     };
     base["Mapa"].addTo(map);
     L.control.layers(base, null, { position: "topright" }).addTo(map);
   }
-  const TILE_OPTS = {
-    subdomains: "abcd",
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  };
 
   function renderDetailMap(l) {
     if (detailMap) { detailMap.remove(); detailMap = null; }
